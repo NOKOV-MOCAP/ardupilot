@@ -39,6 +39,10 @@
 
 #define KDECAN_MAX_NUM_ESCS 8
 
+#define C610_CTRL_BASE_ID 0x200
+#define C610_BROADCAST_CTRL_ID 0x1FF
+#define C610_BASE_FEEDBACK_ID 0x201
+static const uint16_t esc_id_map[4] = {0x201, 0x202, 0x203, 0x204};
 class AP_KDECAN_Driver : public CANSensor
 #if HAL_WITH_ESC_TELEM
 , public AP_ESC_Telem_Backend
@@ -58,7 +62,7 @@ private:
     
     bool send_packet_uint16(const uint8_t address, const uint8_t dest_id, const uint32_t timeout_us, const uint16_t data);
     bool send_packet(const uint8_t address, const uint8_t dest_id, const uint32_t timeout_us, const uint8_t *data = nullptr, const uint8_t data_len = 0);
-
+    bool send_control_command(uint16_t pwm[],uint32_t timeout_us);
     void loop();
 
     struct {
@@ -83,16 +87,13 @@ private:
     } _telemetry;
 #endif
 
-    union frame_id_t {
-        struct PACKED {
-            uint8_t object_address;
-            uint8_t destination_id;
-            uint8_t source_id;
-            uint8_t priority:5;
-            uint8_t unused:3;
-        };
-        uint32_t value;
+    typedef union {
+    struct {
+        uint32_t id : 11;   // 标准帧ID(11位)
+        uint32_t unused : 21;
     };
+    uint32_t value;
+    } frame_id_t;
     
     static const uint8_t AUTOPILOT_NODE_ID = 0;
     static const uint8_t BROADCAST_NODE_ID = 1;

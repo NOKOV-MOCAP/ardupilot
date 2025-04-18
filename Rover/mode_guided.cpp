@@ -22,8 +22,10 @@ bool ModeGuided::_enter()
 void ModeGuided::update()
 {
     switch (_guided_mode) {
+        //go_to False
         case SubMode::WP:
         {
+            // gcs().send_text(MAV_SEVERITY_WARNING, "_guided_mode: WP");
             // check if we've reached the destination
             if (!g2.wp_nav.reached_destination()) {
                 // update navigation controller
@@ -45,12 +47,14 @@ void ModeGuided::update()
                 }
                 // update distance to destination
                 _distance_to_destination = rover.current_loc.get_distance(g2.wp_nav.get_destination());
+                gcs().send_text(MAV_SEVERITY_WARNING, "_distance_to_destination: %f",_distance_to_destination);
             }
             break;
         }
 
         case SubMode::HeadingAndSpeed:
         {
+            gcs().send_text(MAV_SEVERITY_WARNING, "_guided_mode: HeadingAndSpeed");
             // stop vehicle if target not updated within 3 seconds
             if (have_attitude_target && (millis() - _des_att_time_ms) > 3000) {
                 gcs().send_text(MAV_SEVERITY_WARNING, "target not received last 3secs, stopping");
@@ -72,9 +76,10 @@ void ModeGuided::update()
             }
             break;
         }
-
+        //go_to True
         case SubMode::TurnRateAndSpeed:
         {
+            // gcs().send_text(MAV_SEVERITY_WARNING, "_guided_mode: TurnRateAndSpeed");
             // stop vehicle if target not updated within 3 seconds
             if (have_attitude_target && (millis() - _des_att_time_ms) > 3000) {
                 gcs().send_text(MAV_SEVERITY_WARNING, "target not received last 3secs, stopping");
@@ -87,7 +92,8 @@ void ModeGuided::update()
                                                                             g2.motors.limit.steer_right,
                                                                             rover.G_Dt);
                 set_steering(steering_out * 4500.0f);
-                calc_throttle(calc_speed_nudge(_desired_speed, is_negative(_desired_speed)), true);
+                calc_throttle(calc_speed_nudge(_desired_speed_x, is_negative(_desired_speed_x)), true);
+                calc_lateral(calc_speed_nudge(_desired_speed_y, is_negative(_desired_speed_y)), true);
             } else {
                 // we have reached the destination so stay here
                 if (rover.is_boat()) {
@@ -103,12 +109,14 @@ void ModeGuided::update()
 
         case SubMode::Loiter:
         {
+            gcs().send_text(MAV_SEVERITY_WARNING, "_guided_mode: Loiter");
             rover.mode_loiter.update();
             break;
         }
 
         case SubMode::SteeringAndThrottle:
         {
+            gcs().send_text(MAV_SEVERITY_WARNING, "_guided_mode: SteeringAndThrottle");
             // handle timeout
             if (_have_strthr && (AP_HAL::millis() - _strthr_time_ms) > 3000) {
                 _have_strthr = false;
@@ -132,6 +140,7 @@ void ModeGuided::update()
         }
 
         case SubMode::Stop:
+            // gcs().send_text(MAV_SEVERITY_WARNING, "_guided_mode: Stop");
             stop_vehicle();
             break;
 
@@ -366,6 +375,25 @@ void ModeGuided::set_desired_turn_rate_and_speed(float turn_rate_cds, float targ
     // record targets
     _desired_yaw_rate_cds = turn_rate_cds;
     _desired_speed = target_speed;
+    have_attitude_target = true;
+
+#if HAL_LOGGING_ENABLED
+    // log new target
+    rover.Log_Write_GuidedTarget((uint8_t)_guided_mode, Vector3f(_desired_yaw_rate_cds, 0.0f, 0.0f), Vector3f(_desired_speed, 0.0f, 0.0f));
+#endif
+}
+
+// set desired velocity
+void ModeGuided::set_desired_yawrate_and_speed(float turn_rate_cds, float target_speed_x, float target_speed_y)
+{
+    // handle initialisation
+    _guided_mode = SubMode::TurnRateAndSpeed;
+    _des_att_time_ms = AP_HAL::millis();
+
+    // record targets
+    _desired_yaw_rate_cds = turn_rate_cds;
+    _desired_speed_x = target_speed_x;
+    _desired_speed_y = target_speed_y;
     have_attitude_target = true;
 
 #if HAL_LOGGING_ENABLED

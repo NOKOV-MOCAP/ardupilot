@@ -168,6 +168,14 @@ public:
     Canard::Publisher<uavcan_equipment_indication_BeepCommand> buzzer{canard_iface};
     Canard::Publisher<uavcan_equipment_gnss_RTCMStream> rtcm_stream{canard_iface};
 
+    struct C610_ESC_Feedback {
+        uint16_t rotor_angle;       // 转子机械角度 (0-8191对应0-360°)
+        int16_t rotor_speed;        // 转子转速 (RPM)
+        int16_t actual_torque;      // 实际输出扭矩 (-40到40)
+        uint32_t last_update_ms;    // 最后更新时间
+    } _c610_feedback[DRONECAN_SRV_NUMBER];
+    void handle_c610_feedback(const AP_HAL::CANFrame& frame);
+    void handle_can_frame(const AP_HAL::CANFrame& frame);
 #if HAL_MOUNT_XACTI_ENABLED
     // xacti specific publishers
     Canard::Publisher<com_xacti_CopterAttStatus> xacti_copter_att_status{canard_iface};
