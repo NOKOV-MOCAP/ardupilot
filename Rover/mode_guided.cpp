@@ -29,7 +29,7 @@ void ModeGuided::update()
             // check if we've reached the destination
             if (!g2.wp_nav.reached_destination()) {
                 // update navigation controller
-                navigate_to_waypoint();
+                navigate_to_waypoint(_desired_yaw_cd);
             } else {
                 // send notification
                 if (send_notification) {
@@ -330,6 +330,31 @@ bool ModeGuided::set_desired_location(const Location &destination, Location next
 
     // handle guided specific initialisation and logging
     _guided_mode = SubMode::WP;
+    send_notification = true;
+#if HAL_LOGGING_ENABLED
+    rover.Log_Write_GuidedTarget((uint8_t)_guided_mode, Vector3f(destination.lat, destination.lng, 0), Vector3f(g2.wp_nav.get_speed_max(), 0.0f, 0.0f));
+#endif
+    return true;
+}
+
+bool ModeGuided::set_desired_location_heading(float yaw_angle_cd, const Location &destination, Location next_destination)
+{
+    if (use_scurves_for_navigation()) {
+        // use scurves for navigation
+        if (!g2.wp_nav.set_desired_location(destination, next_destination)) {
+            return false;
+        }
+    } else {
+        // use position controller input shaping for navigation
+        // this does not support object avoidance but does allow faster updates of the target
+        if (!g2.wp_nav.set_desired_location_expect_fast_update(destination)) {
+            return false;
+        }
+    }
+
+    // handle guided specific initialisation and logging
+    _guided_mode = SubMode::WP;
+    _desired_yaw_cd = yaw_angle_cd;
     send_notification = true;
 #if HAL_LOGGING_ENABLED
     rover.Log_Write_GuidedTarget((uint8_t)_guided_mode, Vector3f(destination.lat, destination.lng, 0), Vector3f(g2.wp_nav.get_speed_max(), 0.0f, 0.0f));

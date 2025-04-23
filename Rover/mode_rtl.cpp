@@ -32,7 +32,7 @@ void ModeRTL::update()
     // determine if we should keep navigating
     if (!g2.wp_nav.reached_destination()) {
         // update navigation controller
-        navigate_to_waypoint();
+        navigate_to_waypoint(_desired_yaw_cd);
     } else {
         // send notification
         if (send_notification) {

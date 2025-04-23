@@ -533,7 +533,8 @@ void AR_WPNav::update_steering_and_speed(const Location &current_loc, float dt)
 
 void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
 {
-    // 1. 获取当前位置和目标位置（NE坐标系，单位：米）
+    float _current_yaw =  AP::ahrs().get_yaw();
+
     Vector2f current_pos, target_pos;
     if (!current_loc.get_vector_xy_from_origin_NE(current_pos) || 
         !_destination.get_vector_xy_from_origin_NE(target_pos)) {
@@ -544,62 +545,34 @@ void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
     current_pos *= 0.01f; // 厘米转米
     target_pos *= 0.01f;  // 厘米转米
 
-    // 2. 计算位置误差向量
     Vector2f pos_error = target_pos - current_pos;
     float pos_error_length = pos_error.length();
 
-    gcs().send_text(MAV_SEVERITY_WARNING, "target_pos_x: %f  target_pos_y: %f  ",target_pos.x,target_pos.y);
-    gcs().send_text(MAV_SEVERITY_WARNING, "current_pos_x: %f  current_pos_y: %f  ",current_pos.x,current_pos.y);
-    // 3. 如果已经很接近目标，则停止
-    if (pos_error_length < 0.07f) { // 1cm阈值
+    if (pos_error_length < 0.07f) { // 7cm阈值
         _omni_speed_x = 0;
         _omni_speed_y = 0;
         _desired_speed_limited = 0;
         return;
     }
+    /*
+     * 旋转矩阵：
+     * [ cosψ  sinψ ]   [ned_x]
+     * [-sinψ  cosψ ] * [ned_y]
+     */
+    float cos_yaw = cosf(_current_yaw);
+    float sin_yaw = sinf(_current_yaw);
+    Vector2f body_error;
+    body_error.x = pos_error.x * cos_yaw + pos_error.y * sin_yaw;
+    body_error.y = -pos_error.x * sin_yaw + pos_error.y * cos_yaw;
 
-    // 4. 计算期望速度大小（P控制）
-    float desired_speed = pos_error_length * _pos_control.get_pos_p().kP();
-    desired_speed = constrain_float(desired_speed, 0, 0.6);
+    Vector2f body_vel = body_error * _pos_control.get_pos_p().kP();
+    
+    _omni_speed_x = constrain_float(body_vel.x, -_speed_max, _speed_max);
+    _omni_speed_y = constrain_float(body_vel.y, -_speed_max, _speed_max);
 
-    // 5. 保持速度方向与位置误差方向一致
-    Vector2f velocity_dir = pos_error.normalized();
-    _omni_speed_x = velocity_dir.x * desired_speed;
-    _omni_speed_y = velocity_dir.y * desired_speed;
-
-    gcs().send_text(MAV_SEVERITY_WARNING, "_omni_speed_x: %f  _omni_speed_y: %f",_omni_speed_x,_omni_speed_y);
-    // 6. 保持向后兼容
-    _desired_speed_limited = desired_speed;
+    // gcs().send_text(MAV_SEVERITY_WARNING, "_current_yaw:%f _omni_speed_x: %f  _omni_speed_y: %f",_current_yaw,_omni_speed_x,_omni_speed_y);
+    _desired_speed_limited = body_vel.length();
 }
-
-// void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
-// {
-//     // 1. 获取当前位置和目标位置（NE坐标系，单位：米）
-//     Vector2f current_pos, target_pos;
-//     if (!current_loc.get_vector_xy_from_origin_NE(current_pos) || 
-//         !_destination.get_vector_xy_from_origin_NE(target_pos)) {
-//         _omni_speed_x = 0;
-//         _omni_speed_y = 0;
-//         return;
-//     }
-//     current_pos *= 0.01f; // 厘米转米
-//     target_pos *= 0.01f;   // 厘米转米
-
-//     // 2. 计算位置误差向量（目标位置 - 当前位置）
-//     Vector2f pos_error = target_pos - current_pos;
-
-//     // 3. 计算原始速度需求（P控制）
-//     Vector2f desired_vel = pos_error * _pos_control.get_pos_p().kP();
-
-//     // 4. 直接赋值给成员变量（已应用限制）
-//     _omni_speed_x = constrain_float(desired_vel.x, -0.6, 0.6);
-//     _omni_speed_y = constrain_float(desired_vel.y, -0.6, 0.6);
-
-//     // gcs().send_text(MAV_SEVERITY_WARNING, "_omni_speed_x: %f  _omni_speed_y: %f",_omni_speed_x,_omni_speed_y);
-
-//     // 5. 保持向后兼容的标量速度输出
-//     _desired_speed_limited = sqrtf(_omni_speed_x * _omni_speed_x + _omni_speed_y * _omni_speed_y);
-// }
 
 // settor to allow vehicle code to provide turn related param values to this library (should be updated regularly)
 void AR_WPNav::set_turn_params(float turn_radius, bool pivot_possible)

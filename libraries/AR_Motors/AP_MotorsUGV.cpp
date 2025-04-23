@@ -941,12 +941,12 @@ void AP_MotorsUGV::output_omni(bool armed, float steering, float throttle, float
 
         float steering_scaled = steering / 4500.0f; // steering scaled -1 to +1
         float throttle_scaled = throttle * 0.01f;  // throttle scaled -1 to +1
-        static int count = 0;
-        count++;
-        if(count >100){
-            gcs().send_text(MAV_SEVERITY_WARNING, "throttle_scaled:%f  scaled_lateral:%f",throttle_scaled,scaled_lateral);
-            count =0 ;
-        }
+        // static int count = 0;
+        // count++;
+        // if(count >100){
+        //     gcs().send_text(MAV_SEVERITY_WARNING, "throttle_scaled:%f  scaled_lateral:%f",throttle_scaled,scaled_lateral);
+        //     count =0 ;
+        // }
         
 
 

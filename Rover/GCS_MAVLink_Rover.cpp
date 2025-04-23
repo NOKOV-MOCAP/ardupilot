@@ -760,6 +760,7 @@ void GCS_MAVLINK_Rover::handle_set_position_target_local_ned(const mavlink_messa
     // consume yaw heading
     if (!yaw_ignore) {
         target_yaw_cd = ToDeg(packet.yaw) * 100.0f;
+        // gcs().send_text(MAV_SEVERITY_WARNING, "target_yaw_cd:%f",target_yaw_cd);
         // rotate target yaw if provided in body-frame
         if (packet.coordinate_frame == MAV_FRAME_BODY_NED || packet.coordinate_frame == MAV_FRAME_BODY_OFFSET_NED) {
             target_yaw_cd = wrap_180_cd(target_yaw_cd + rover.ahrs.yaw_sensor);
@@ -783,12 +784,16 @@ void GCS_MAVLINK_Rover::handle_set_position_target_local_ned(const mavlink_messa
             speed_dir = -1.0f;
         }
     }
-
+    
     // set guided mode targets
     if (!pos_ignore) {
         // consume position target
         // gcs().send_text(MAV_SEVERITY_WARNING, "consume position target");
-        if (!rover.mode_guided.set_desired_location(target_loc)) {
+        // if (!rover.mode_guided.set_desired_location(target_loc)) {
+        //     // GCS will need to monitor desired location to
+        //     // see if they are having an effect.
+        // }
+        if (!rover.mode_guided.set_desired_location_heading(target_yaw_cd,target_loc)) {
             // GCS will need to monitor desired location to
             // see if they are having an effect.
         }
