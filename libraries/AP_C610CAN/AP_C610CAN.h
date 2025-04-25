@@ -13,40 +13,44 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 /*
- * AP_KDECAN.h
+ * AP_C610CAN.h
  *
  *      Author: Francisco Ferreira and Tom Pittenger
  */
  
 #pragma once
 
-#include <AP_KDECAN/AP_KDECAN_config.h>
+#include <AP_C610CAN/AP_C610CAN_config.h>
 
-#if AP_KDECAN_ENABLED
+#if AP_C610CAN_ENABLED
 #include <AP_HAL/AP_HAL.h>
 
 #include <AP_CANManager/AP_CANSensor.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_ESC_Telem/AP_ESC_Telem_Backend.h>
 
-#define AP_KDECAN_USE_EVENTS (defined(CH_CFG_USE_EVENTS) && CH_CFG_USE_EVENTS == TRUE)
+#define AP_C610CAN_USE_EVENTS (defined(CH_CFG_USE_EVENTS) && CH_CFG_USE_EVENTS == TRUE)
 
-#if AP_KDECAN_USE_EVENTS
+#if AP_C610CAN_USE_EVENTS
 #include <ch.h>
 #endif
 
 #define DEFAULT_NUM_POLES 14
 
-#define KDECAN_MAX_NUM_ESCS 8
+#define C610CAN_MAX_NUM_ESCS 8
 
-class AP_KDECAN_Driver : public CANSensor
+#define C610_CTRL_BASE_ID 0x200
+#define C610_BROADCAST_CTRL_ID 0x1FF
+#define C610_BASE_FEEDBACK_ID 0x201
+static const uint16_t esc_id_map[4] = {0x201, 0x202, 0x203, 0x204};
+class AP_C610CAN_Driver : public CANSensor
 #if HAL_WITH_ESC_TELEM
 , public AP_ESC_Telem_Backend
 #endif
 {
 public:
     
-    AP_KDECAN_Driver();
+    AP_C610CAN_Driver();
 
     // called from SRV_Channels
     void update(const uint8_t num_poles);
@@ -58,7 +62,7 @@ private:
     
     bool send_packet_uint16(const uint8_t address, const uint8_t dest_id, const uint32_t timeout_us, const uint16_t data);
     bool send_packet(const uint8_t address, const uint8_t dest_id, const uint32_t timeout_us, const uint8_t *data = nullptr, const uint8_t data_len = 0);
-
+    bool send_control_command(uint16_t pwm[],uint32_t timeout_us);
     void loop();
 
     struct {
@@ -71,7 +75,7 @@ private:
         bool is_new;
         uint32_t last_new_ms;
         uint16_t pwm[NUM_SERVO_CHANNELS];
-#if AP_KDECAN_USE_EVENTS
+#if AP_C610CAN_USE_EVENTS
         thread_t *thread_ctx;
 #endif
     } _output;
@@ -83,16 +87,13 @@ private:
     } _telemetry;
 #endif
 
-    union frame_id_t {
-        struct PACKED {
-            uint8_t object_address;
-            uint8_t destination_id;
-            uint8_t source_id;
-            uint8_t priority:5;
-            uint8_t unused:3;
-        };
-        uint32_t value;
+    typedef union {
+    struct {
+        uint32_t id : 11;   // 标准帧ID(11位)
+        uint32_t unused : 21;
     };
+    uint32_t value;
+    } frame_id_t;
     
     static const uint8_t AUTOPILOT_NODE_ID = 0;
     static const uint8_t BROADCAST_NODE_ID = 1;
@@ -116,28 +117,28 @@ private:
 
 };
 
-class AP_KDECAN {
+class AP_C610CAN {
 public:
-    AP_KDECAN();
+    AP_C610CAN();
 
     /* Do not allow copies */
-    CLASS_NO_COPY(AP_KDECAN);
+    CLASS_NO_COPY(AP_C610CAN);
 
     static const struct AP_Param::GroupInfo var_info[];
 
     void init();
     void update();
 
-    static AP_KDECAN *get_singleton() { return _singleton; }
+    static AP_C610CAN *get_singleton() { return _singleton; }
 
 private:
-    static AP_KDECAN *_singleton;
+    static AP_C610CAN *_singleton;
 
     AP_Int8 _num_poles;
-    AP_KDECAN_Driver *_driver;
+    AP_C610CAN_Driver *_driver;
 };
 namespace AP {
-    AP_KDECAN *kdecan();
+    AP_C610CAN *c610can();
 };
 
-#endif // AP_KDECAN_ENABLED
+#endif // AP_C610CAN_ENABLED

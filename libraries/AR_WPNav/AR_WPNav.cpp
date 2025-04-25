@@ -542,20 +542,20 @@ void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
         _omni_speed_y = 0;
         return;
     }
-    current_pos *= 0.01f; // 厘米转米
-    target_pos *= 0.01f;  // 厘米转米
+    current_pos *= 0.01f; 
+    target_pos *= 0.01f;  
 
     Vector2f pos_error = target_pos - current_pos;
     float pos_error_length = pos_error.length();
 
-    if (pos_error_length < 0.07f) { // 7cm阈值
+    if (pos_error_length < 0.07f) { 
         _omni_speed_x = 0;
         _omni_speed_y = 0;
         _desired_speed_limited = 0;
         return;
     }
     /*
-     * 旋转矩阵：
+     * 
      * [ cosψ  sinψ ]   [ned_x]
      * [-sinψ  cosψ ] * [ned_y]
      */

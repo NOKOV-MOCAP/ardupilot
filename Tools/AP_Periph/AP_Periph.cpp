@@ -220,6 +220,11 @@ void AP_Periph_FW::init()
     kdecan.init();
 #endif
 
+#if AP_C610CAN_ENABLED
+    c610can.init();
+#endif
+
+
 #if AP_PERIPH_AIRSPEED_ENABLED
 #if (CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS) && (HAL_USE_I2C == TRUE)
     const bool pins_enabled = ChibiOS::I2CBus::check_select_pins(0x01);

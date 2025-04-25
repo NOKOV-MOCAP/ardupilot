@@ -26,7 +26,7 @@ def build(bld):
             'AP_Devo_Telem',
             'AC_AutoTune',
             'AP_KDECAN',
-            #'AP_C610CAN',
+            'AP_C610CAN',
             'AP_SurfaceDistance'
         ],
     )

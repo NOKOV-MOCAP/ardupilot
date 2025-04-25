@@ -47,7 +47,7 @@ void ModeGuided::update()
                 }
                 // update distance to destination
                 _distance_to_destination = rover.current_loc.get_distance(g2.wp_nav.get_destination());
-                gcs().send_text(MAV_SEVERITY_WARNING, "_distance_to_destination: %f",_distance_to_destination);
+                // gcs().send_text(MAV_SEVERITY_WARNING, "_distance_to_destination: %f",_distance_to_destination);
             }
             break;
         }

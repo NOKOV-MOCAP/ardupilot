@@ -68,6 +68,10 @@
 #define AP_KDECAN_ENABLED 0
 #endif
 
+#ifndef AP_C610CAN_ENABLED
+#define AP_C610CAN_ENABLED 0
+#endif
+
 #ifndef HAL_GENERATOR_ENABLED
 #define HAL_GENERATOR_ENABLED 0
 #endif

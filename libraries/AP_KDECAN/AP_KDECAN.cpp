@@ -85,56 +85,66 @@ AP_KDECAN_Driver::AP_KDECAN_Driver() : CANSensor("KDECAN")
     hal.scheduler->thread_create(FUNCTOR_BIND_MEMBER(&AP_KDECAN_Driver::loop, void), "kdecan", 2048, AP_HAL::Scheduler::PRIORITY_CAN, 0);
 }
 
+// parse inbound frames
 void AP_KDECAN_Driver::handle_frame(AP_HAL::CANFrame &frame)
 {
-    // 只处理标准数据帧
-    if (frame.isExtended()) {
+    if (!frame.isExtended()) {
         return;
     }
 
-    // 检查是否是已知电调反馈ID
-    bool valid_id = false;
-    uint8_t esc_idx = 0;
-    for (; esc_idx < 4; esc_idx++) {
-        if (frame.id == esc_id_map[esc_idx]) {
-            valid_id = true;
+    const frame_id_t id { .value = frame.id & AP_HAL::CANFrame::MaskExtID };
+
+#if AP_KDECAN_DEBUG
+    if (id.object_address != TELEMETRY_OBJ_ADDR) {
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"KDECAN: rx id:%d, src:%d, dest:%d, len:%d", (int)id.object_address, (int)id.source_id, (int)id.destination_id, (int)frame.dlc);
+    }
+#endif
+
+    if (id.destination_id != AUTOPILOT_NODE_ID || id.source_id < ESC_NODE_ID_FIRST) {
+        // not for us or invalid id (0 and 1 are invalid)
+        return;
+    }
+
+    // check if frame is valid: directed at autopilot, doesn't come from broadcast and ESC was detected before
+    switch (id.object_address) {
+        case ESC_INFO_OBJ_ADDR:
+            if (frame.dlc == 5 &&
+                (id.source_id < (ARRAY_SIZE(_output.pwm) + ESC_NODE_ID_FIRST)))
+            {
+                if (__builtin_popcount(_init.detected_bitmask) >= KDECAN_MAX_NUM_ESCS) {
+                    // we already have the maximum number of ESCs
+                    return;
+                }
+                const uint16_t bitmask = (1UL << (id.source_id - ESC_NODE_ID_FIRST));
+
+                if ((bitmask & _init.detected_bitmask) != bitmask) {
+                    _init.detected_bitmask |= bitmask;
+                    GCS_SEND_TEXT(MAV_SEVERITY_INFO,"KDECAN: Found ESC id %u mapped to SERVO%u", id.source_id, id.source_id-1);
+                }
+            }
+        break;
+
+#if HAL_WITH_ESC_TELEM
+        case TELEMETRY_OBJ_ADDR:
+            if (frame.dlc == 8 &&
+                (1UL << (id.source_id - ESC_NODE_ID_FIRST) & _init.detected_bitmask))
+            {
+                const uint8_t idx = id.source_id - ESC_NODE_ID_FIRST;
+                const uint8_t num_poles = _telemetry.num_poles > 0 ? _telemetry.num_poles : DEFAULT_NUM_POLES;
+                update_rpm(idx, uint16_t(uint16_t(frame.data[4] << 8 | frame.data[5]) * 60UL * 2 / num_poles));
+
+                const TelemetryData t {
+                    .temperature_cdeg = int16_t(frame.data[6] * 100),
+                    .voltage = float(uint16_t(frame.data[0] << 8 | frame.data[1])) * 0.01f,
+                    .current = float(uint16_t(frame.data[2] << 8 | frame.data[3])) * 0.01f,
+                };
+                update_telem_data(idx, t,
+                    AP_ESC_Telem_Backend::TelemetryType::CURRENT |
+                    AP_ESC_Telem_Backend::TelemetryType::VOLTAGE |
+                    AP_ESC_Telem_Backend::TelemetryType::TEMPERATURE);
+            }
             break;
-        }
-    }
-    
-    if (!valid_id || frame.dlc != 8) {
-        return;
-    }
-
-    // 解析反馈数据 (小端格式)
-     __attribute__((unused)) const uint16_t angle = (frame.data[1] << 8) | frame.data[0]; 
-    const int16_t rpm = frame.data[2] << 8 | frame.data[3];
-    const int16_t current = frame.data[4] << 8 | frame.data[5];
-    const int16_t temp = frame.data[6] << 8 | frame.data[7];
-
-    // 更新电调状态
-    update_rpm(esc_idx, abs(rpm));
-
-    // 转换温度单位(假设原始单位为°C)
-    const int16_t temp_cdeg = temp * 100;
-    
-    // 转换电流单位(假设原始单位为0.01A)
-    const float current_amps = current * 0.01f;
-
-    const TelemetryData t {
-        .temperature_cdeg = temp_cdeg,
-        .voltage = 0, // C610协议未提供电压
-        .current = current_amps
-    };
-    
-    update_telem_data(esc_idx, t,
-        AP_ESC_Telem_Backend::TelemetryType::CURRENT |
-        AP_ESC_Telem_Backend::TelemetryType::TEMPERATURE);
-
-    // 标记电调为已检测到
-    if (!(_init.detected_bitmask & (1 << esc_idx))) {
-        _init.detected_bitmask |= (1 << esc_idx);
-        //GCS_SEND_TEXT(MAV_SEVERITY_INFO, "KDECAN: Found ESC ID 0x%03X at index %d", frame.id, esc_idx);
+#endif // HAL_WITH_ESC_TELEM
     }
 }
 
@@ -144,6 +154,10 @@ void AP_KDECAN_Driver::update(const uint8_t num_poles)
         // nothing to do...
         return;
     }
+
+#if HAL_WITH_ESC_TELEM
+    _telemetry.num_poles = num_poles;
+#endif
     
     WITH_SEMAPHORE(_output.sem);
     for (uint8_t i = 0; i < ARRAY_SIZE(_output.pwm); i++) {
@@ -168,86 +182,108 @@ void AP_KDECAN_Driver::update(const uint8_t num_poles)
         chEvtSignal(_output.thread_ctx, 1);
     }
 #endif
-}
 
+#if AP_KDECAN_DEBUG
+    static uint32_t last_send_ms = 0;
+    const uint32_t now_ms = AP_HAL::millis();
+    if (now_ms - last_send_ms > 1000) {
+        last_send_ms = now_ms;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO,"%u: %u, %u, %u, %u, %u, %u, %u, %u",
+        (unsigned)_init.detected_bitmask,
+        (unsigned)_output.pwm[0], (unsigned)_output.pwm[1], (unsigned)_output.pwm[2], (unsigned)_output.pwm[3],
+        (unsigned)_output.pwm[4], (unsigned)_output.pwm[5], (unsigned)_output.pwm[6], (unsigned)_output.pwm[7]);
+    }
+#endif
+}
 
 void AP_KDECAN_Driver::loop()
 {
     uint16_t pwm[ARRAY_SIZE(_output.pwm)] {};
+
 #if AP_KDECAN_USE_EVENTS
     _output.thread_ctx = chThdGetSelfX();
 #endif
-    while (true) {
 
+    uint8_t broadcast_esc_info_boot_spam_count = 3;
+    uint32_t broadcast_esc_info_next_interval_ms = 100; // spam a few at boot at this rate
+
+    while (true) {
 #if AP_KDECAN_USE_EVENTS
-        // sleep until we get new data, but also wake up at 1KHz to send the old data again
+        // sleep until we get new data, but also wake up at 400Hz to send the old data again
         chEvtWaitAnyTimeout(ALL_EVENTS, chTimeUS2I(2500));
  #else
-        hal.scheduler->delay_microseconds(2500); // 1KHz
+        hal.scheduler->delay_microseconds(2500); // 400Hz
 #endif
-        uint32_t now = AP_HAL::millis();
-        
-        // 1. 更新PWM值
+
+        const uint32_t now_ms = AP_HAL::millis();
+
+        // This should run at 400Hz
         {
             WITH_SEMAPHORE(_output.sem);
             if (_output.is_new) {
-                _output.last_new_ms = now;
+                _output.last_new_ms = now_ms;
                 _output.is_new = false;
                 memcpy(&pwm, &_output.pwm, sizeof(pwm));
-            }
-            
-            // 超时清零
-            if (_output.last_new_ms && now - _output.last_new_ms > 1000) {
+
+            } else if (_output.last_new_ms && now_ms - _output.last_new_ms > 1000) {
+                // if we haven't gotten any PWM updates for a bit, zero it
+                // out so we don't just keep sending the same values forever
                 memset(&pwm, 0, sizeof(pwm));
                 _output.last_new_ms = 0;
             }
         }
 
-
-        // 2. 以1kHz频率发送控制命令
-        send_control_command(pwm,1000);
-        
-        // 3. 维持1kHz循环频率
-        // hal.scheduler->delay_microseconds(1000);
-    }
-}
-
-int16_t pwm_to_current(uint16_t pwm) {
-    
-    // 线性映射公式：(PWM - 1500) * 40
-    // uint16_t incr_pwm = 50;
-    // if(pwm > 1450 && pwm <1500){
-    //     pwm -= incr_pwm;
-    // }
-    // if(pwm < 1550 && pwm >1500){
-    //     pwm += incr_pwm;
-    // }
-    // 确保PWM在有效范围内（安全保护）
-    pwm = constrain_int16(pwm, 1000, 2000);
-    return static_cast<int16_t>((pwm - 1500) * 6);
-}
-
-bool AP_KDECAN_Driver::send_control_command(uint16_t pwm[],uint32_t timeout_us)
-{
-    AP_HAL::CANFrame frame;
-    frame.id = C610_CTRL_BASE_ID; // 使用0x200作为控制ID
-    //frame.isExtended(false);
-    frame.dlc = 8;
-
-    // 将PWM值(1000~2000)转换为电流值(-10000~10000)
-    int16_t currents[4];
-    for (uint8_t i = 0; i < 4; i++) {
-        if (_init.detected_bitmask & (1 << i)) {
-            // gcs().send_text(MAV_SEVERITY_WARNING, "servo%d: %d",i+1,pwm[i]);
-            currents[i] = constrain_int16(pwm_to_current(pwm[i]), -10000, 10000);
-            if(i==1||i==3)
-                currents[i] *= -1;
-        } else {
-            currents[i] = 0;
+        for (uint8_t i=0; i<ARRAY_SIZE(_output.pwm); i++) {
+            if ((_init.detected_bitmask & (1UL<<i)) != 0) {
+                send_packet_uint16(SET_PWM_OBJ_ADDR, (i + ESC_NODE_ID_FIRST), 1000, pwm[i]);
+            }
         }
-        frame.data[i*2] = currents[i] >> 8;
-        frame.data[i*2+1] = currents[i] & 0xFF;
-    }  
+
+#if HAL_WITH_ESC_TELEM
+        // broadcast as request-telemetry msg to everyone
+        if (_init.detected_bitmask != 0 && now_ms - _telemetry.timer_ms >= TELEMETRY_INTERVAL_MS) {
+            if (send_packet(TELEMETRY_OBJ_ADDR, BROADCAST_NODE_ID, 10000)) {
+                _telemetry.timer_ms = now_ms;
+            }
+        }
+#endif // HAL_WITH_ESC_TELEM
+
+        if ((_init.detected_bitmask == 0 || broadcast_esc_info_boot_spam_count > 0) && (now_ms - _init.detected_bitmask_ms >= broadcast_esc_info_next_interval_ms)) {
+            // broadcast an "anyone there?" quick at boot but then 1Hz forever until we see at least 1 esc respond
+            if (broadcast_esc_info_boot_spam_count > 0) {
+                broadcast_esc_info_boot_spam_count--;
+            } else {
+                broadcast_esc_info_next_interval_ms = 1000;
+            }
+
+            if (send_packet(ESC_INFO_OBJ_ADDR, BROADCAST_NODE_ID, 100000)) {
+                _init.detected_bitmask_ms = now_ms;
+            }
+        }
+
+    } // while true
+}
+
+bool AP_KDECAN_Driver::send_packet_uint16(const uint8_t address, const uint8_t dest_id, const uint32_t timeout_us, const uint16_t data)
+{
+    const uint16_t data_be16 = htobe16(data);
+    return send_packet(address, dest_id, timeout_us, (uint8_t*)&data_be16, 2);
+}
+
+bool AP_KDECAN_Driver::send_packet(const uint8_t address, const uint8_t dest_id, const uint32_t timeout_us, const uint8_t *data, const uint8_t data_len)
+{
+    // broadcast telemetry request frame
+    const frame_id_t id {
+        {
+            .object_address = address,
+            .destination_id = dest_id,
+            .source_id = AUTOPILOT_NODE_ID,
+            .priority = 0,
+            .unused = 0
+        }
+    };
+
+    AP_HAL::CANFrame frame = AP_HAL::CANFrame((id.value | AP_HAL::CANFrame::FlagEFF), data, data_len, false);
 
     return write_frame(frame, timeout_us);
 }

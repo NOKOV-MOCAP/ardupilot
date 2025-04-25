@@ -29,6 +29,6 @@ public:
         Scripting2 = 12,
         TOFSenseP = 13,
         RadarCAN = 14,  // used by NanoRadar and Hexsoon
-       // C610CAN = 15,
+        C610CAN = 30,
     };
 };
