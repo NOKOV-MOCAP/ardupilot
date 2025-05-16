@@ -332,7 +332,7 @@ void AP_MotorsUGV::output(bool armed, float ground_speed, float dt)
     output_regular(armed, ground_speed, _steering, _throttle);
 
     // output for skid steering style frames
-    output_skid_steering(armed, _steering, _throttle, dt);
+    // output_skid_steering(armed, _steering, _throttle, dt);
 
     // output for omni frames
     output_omni(armed, _steering, _throttle, _lateral);
@@ -638,10 +638,10 @@ void AP_MotorsUGV::setup_omni()
 
     case FRAME_TYPE_OMNIX:
         _motors_num = 4,
-        add_omni_motor(0, 1.0f, -1.0f, -1.0f);
-        add_omni_motor(1, 1.0f, -1.0f, 1.0f);
-        add_omni_motor(2, 1.0f, 1.0f, -1.0f);
-        add_omni_motor(3, 1.0f, 1.0f, 1.0f);
+        add_omni_motor(0, 1.0f, 1.0f, -1.0f);
+        add_omni_motor(1, 1.0f, 1.0f, 1.0f);
+        add_omni_motor(2, 1.0f, -1.0f, -1.0f);
+        add_omni_motor(3, 1.0f, -1.0f, 1.0f);
         break;
 
     case FRAME_TYPE_OMNIPLUS:
@@ -903,6 +903,7 @@ void AP_MotorsUGV::output_skid_steering(bool armed, float steering, float thrott
     float motor_left = throttle_scaled + steering_scaled;
     float motor_right = throttle_scaled - steering_scaled;
 
+    gcs().send_text(MAV_SEVERITY_WARNING, "throttle_scaled:%f  steering_scaled:%f",throttle_scaled,steering_scaled);
     // Apply asymmetry correction
     if (is_negative(motor_right)) {
         motor_right *= thrust_asymmetry;
@@ -911,10 +912,13 @@ void AP_MotorsUGV::output_skid_steering(bool armed, float steering, float thrott
         motor_left *= thrust_asymmetry;
     }
 
+    // gcs().send_text(MAV_SEVERITY_WARNING, "motor_left:%f  motor_right:%f",motor_left,motor_right);
+
     // send pwm value to each motor
     output_throttle(SRV_Channel::k_throttleLeft, 100.0f * motor_left, dt);
     output_throttle(SRV_Channel::k_throttleRight, 100.0f * motor_right, dt);
 }
+
 
 // output for omni frames
 void AP_MotorsUGV::output_omni(bool armed, float steering, float throttle, float lateral)
@@ -932,16 +936,22 @@ void AP_MotorsUGV::output_omni(bool armed, float steering, float throttle, float
         steering = constrain_float(steering, -4500.0f, 4500.0f);
 
         // scale throttle, steering and lateral inputs to -1 to 1
-        const float scaled_throttle = throttle * 0.01f;
-        const float scaled_steering = steering / 4500.0f;
-        const float scaled_lateral = lateral * 0.01f;
+        
+        float scaled_lateral = lateral * 0.01f;
 
+        float steering_scaled = steering / 4500.0f; // steering scaled -1 to +1
+        float throttle_scaled = throttle * 0.01f;  // throttle scaled -1 to +1
+     
         float thr_str_ltr_out[_motors_num];
         float thr_str_ltr_max = 1;
         for (uint8_t i=0; i<_motors_num; i++) {
             // Each motor outputs throttle + steering + lateral
-            thr_str_ltr_out[i] = (scaled_throttle * _throttle_factor[i]) +
-                              (scaled_steering * _steering_factor[i]) +
+            /*  add_omni_motor(0, 1.0f, -1.0f, -1.0f);
+                add_omni_motor(1, 1.0f, -1.0f, 1.0f);
+                add_omni_motor(2, 1.0f, 1.0f, -1.0f);
+                add_omni_motor(3, 1.0f, 1.0f, 1.0f);*/
+            thr_str_ltr_out[i] = (throttle_scaled * _throttle_factor[i]) +
+                              (steering_scaled * _steering_factor[i]) +
                               (scaled_lateral * _lateral_factor[i]);
             // record the largest output above 1
             if (fabsf(thr_str_ltr_out[i]) > thr_str_ltr_max) {
@@ -1036,6 +1046,7 @@ void AP_MotorsUGV::output_throttle(SRV_Channel::Function function, float throttl
         case SRV_Channel::k_motor3:
         case SRV_Channel::k_motor4:
             SRV_Channels::set_output_scaled(function,  throttle);
+            // gcs().send_text(MAV_SEVERITY_WARNING, "k_motor%d_scaled: %f",function-32,throttle);
             break;
         case SRV_Channel::k_throttleLeft:
         case SRV_Channel::k_throttleRight:

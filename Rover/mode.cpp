@@ -259,6 +259,20 @@ bool Mode::set_desired_location(const Location &destination, Location next_desti
     return true;
 }
 
+// set desired location
+bool Mode::set_desired_location_heading(float yaw_angle_cd,const Location &destination, Location next_destination )
+{
+    if (!g2.wp_nav.set_desired_location(destination, next_destination)) {
+        return false;
+    }
+
+    // initialise distance
+    _distance_to_destination = g2.wp_nav.get_distance_to_destination();
+    _reached_destination = false;
+
+    return true;
+}
+
 // get default speed for this mode (held in WP_SPEED or RTL_SPEED)
 float Mode::get_speed_default(bool rtl) const
 {
@@ -287,7 +301,7 @@ void Mode::handle_tack_request()
 void Mode::calc_throttle(float target_speed, bool avoidance_enabled)
 {
     // get acceleration limited target speed
-    target_speed = attitude_control.get_desired_speed_accel_limited(target_speed, rover.G_Dt);
+    // target_speed = attitude_control.get_desired_speed_accel_limited(target_speed, rover.G_Dt);
 
 #if AP_AVOIDANCE_ENABLED
     // apply object avoidance to desired speed using half vehicle's maximum deceleration
@@ -316,6 +330,7 @@ void Mode::calc_throttle(float target_speed, bool avoidance_enabled)
         } else {
             bool motor_lim_low = g2.motors.limit.throttle_lower || attitude_control.pitch_limited();
             bool motor_lim_high = g2.motors.limit.throttle_upper || attitude_control.pitch_limited();
+            // gcs().send_text(MAV_SEVERITY_WARNING, "motor_lim_low:%d motor_lim_high:%d",motor_lim_low,motor_lim_high);
             throttle_out = 100.0f * attitude_control.get_throttle_out_speed(target_speed, motor_lim_low, motor_lim_high, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt);
         }
 
@@ -324,9 +339,55 @@ void Mode::calc_throttle(float target_speed, bool avoidance_enabled)
             rover.balancebot_pitch_control(throttle_out);
         }
     }
-
+    // gcs().send_text(MAV_SEVERITY_WARNING, "target_speed:%f  throttle_out: %f",target_speed,throttle_out);
     // send to motor
     g2.motors.set_throttle(throttle_out);
+}
+
+void Mode::calc_lateral(float target_speed, bool avoidance_enabled)
+{
+    // get acceleration limited target speed
+    // target_speed = attitude_control.get_desired_speed_accel_limited(target_speed, rover.G_Dt);
+
+// #if AP_AVOIDANCE_ENABLED
+//     // apply object avoidance to desired speed using half vehicle's maximum deceleration
+//     if (avoidance_enabled) {
+//         g2.avoid.adjust_speed(0.0f, 0.5f * attitude_control.get_decel_max(), ahrs.get_yaw(), target_speed, rover.G_Dt);
+//         if (g2.sailboat.tack_enabled() && g2.avoid.limits_active()) {
+//             // we are a sailboat trying to avoid fence, try a tack
+//             if (rover.control_mode != &rover.mode_acro) {
+//                 rover.control_mode->handle_tack_request();
+//             }
+//         }
+//     }
+// #endif  // AP_AVOIDANCE_ENABLED
+
+    // call throttle controller and convert output to -100 to +100 range
+    float throttle_out = 0.0f;
+
+    if (g2.sailboat.sail_enabled()) {
+        // sailboats use special throttle and mainsail controller
+        g2.sailboat.get_throttle_and_set_mainsail(target_speed, throttle_out);
+    } else {
+        // call speed or stop controller
+        if (is_zero(target_speed) && !rover.is_balancebot()) {
+            bool stopped;
+            throttle_out = 100.0f * attitude_control.get_lateral_out_stop(g2.motors.limit.throttle_lower, g2.motors.limit.throttle_upper, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt, stopped);
+        } else {
+            bool motor_lim_low = g2.motors.limit.throttle_lower || attitude_control.pitch_limited();
+            bool motor_lim_high = g2.motors.limit.throttle_upper || attitude_control.pitch_limited();
+            throttle_out = 100.0f * attitude_control.get_lateral_out_speed(target_speed, motor_lim_low, motor_lim_high, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt);
+        }
+
+        // if vehicle is balance bot, calculate actual throttle required for balancing
+        // if (rover.is_balancebot()) {
+        //     rover.balancebot_pitch_control(throttle_out);
+        // }
+    }
+
+    // gcs().send_text(MAV_SEVERITY_WARNING, "target_speed:%f  lateral_out: %f",target_speed,throttle_out);
+    // send to motor
+    g2.motors.set_lateral(throttle_out);
 }
 
 // performs a controlled stop without turning
@@ -335,6 +396,7 @@ bool Mode::stop_vehicle()
     // call throttle controller and convert output to -100 to +100 range
     bool stopped = false;
     float throttle_out;
+    float lateral_out;
 
     // if vehicle is balance bot, calculate throttle required for balancing
     if (rover.is_balancebot()) {
@@ -343,12 +405,13 @@ bool Mode::stop_vehicle()
     } else {
         throttle_out = 100.0f * attitude_control.get_throttle_out_stop(g2.motors.limit.throttle_lower, g2.motors.limit.throttle_upper, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt, stopped);
     }
-
+    lateral_out = 100.0f * attitude_control.get_lateral_out_stop(g2.motors.limit.throttle_lower, g2.motors.limit.throttle_upper, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt, stopped);
     // relax sails if present
     g2.sailboat.relax_sails();
 
     // send to motor
     g2.motors.set_throttle(throttle_out);
+    g2.motors.set_lateral(lateral_out);
 
     // do not turn while slowing down
     float steering_out = 0.0;
@@ -415,7 +478,7 @@ float Mode::calc_speed_nudge(float target_speed, bool reversed)
 // high level call to navigate to waypoint
 // uses wp_nav to calculate turn rate and speed to drive along the path from origin to destination
 // this function updates _distance_to_destination
-void Mode::navigate_to_waypoint()
+void Mode::navigate_to_waypoint(float desired_yaw_cd)
 {
     // apply speed nudge from pilot
     // calc_speed_nudge's "desired_speed" argument should be negative when vehicle is reversing
@@ -432,34 +495,42 @@ void Mode::navigate_to_waypoint()
     // sailboats trigger tack if simple avoidance becomes active
     if (g2.sailboat.tack_enabled() && g2.avoid.limits_active()) {
         // we are a sailboat trying to avoid fence, try a tack
+        gcs().send_text(MAV_SEVERITY_WARNING, "AP_AVOIDANCE_ENABLED");
         rover.control_mode->handle_tack_request();
     }
 #endif
 
     // pass desired speed to throttle controller
     // do not do simple avoidance because this is already handled in the position controller
-    calc_throttle(g2.wp_nav.get_speed(), false);
+    
+    calc_throttle(g2.wp_nav.get_omni_speedX(), false);
+    calc_lateral(-1.0 * g2.wp_nav.get_omni_speedY(), false);
+    // calc_throttle(g2.wp_nav.get_speed(), false);
 
     float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
+    // gcs().send_text(MAV_SEVERITY_WARNING, "desired_heading_cd: %f desired_yaw_cd:%f",desired_heading_cd,desired_yaw_cd);
     if (g2.sailboat.use_indirect_route(desired_heading_cd)) {
         // sailboats use heading controller when tacking upwind
+        gcs().send_text(MAV_SEVERITY_WARNING, "sailboats use heading controller when tacking upwind");
         desired_heading_cd = g2.sailboat.calc_heading(desired_heading_cd);
         // use pivot turn rate for tacks
         const float turn_rate = g2.sailboat.tacking() ? g2.wp_nav.get_pivot_rate() : 0.0f;
         calc_steering_to_heading(desired_heading_cd, turn_rate);
     } else {
         // retrieve turn rate from waypoint controller
-        float desired_turn_rate_rads = g2.wp_nav.get_turn_rate_rads();
+        // float desired_turn_rate_rads = g2.wp_nav.get_turn_rate_rads();
 
         // if simple avoidance is active at very low speed do not attempt to turn
 #if AP_AVOIDANCE_ENABLED
         if (g2.avoid.limits_active() && (fabsf(attitude_control.get_desired_speed()) <= attitude_control.get_stop_speed())) {
-            desired_turn_rate_rads = 0.0f;
+            // desired_turn_rate_rads = 0.0f;
         }
 #endif
 
         // call turn rate steering controller
-        calc_steering_from_turn_rate(desired_turn_rate_rads);
+        // calc_steering_from_turn_rate(desired_turn_rate_rads);
+        calc_steering_to_heading(desired_yaw_cd);
+        
     }
 }
 
@@ -510,6 +581,14 @@ void Mode::set_steering(float steering_value)
         steering_value = channel_steer->stick_mixing((int16_t)steering_value);
     }
     g2.motors.set_steering(steering_value);
+}
+
+void Mode::set_lateral(float lateral_value)
+{
+    if (allows_stick_mixing() && g2.stick_mixing > 0) {
+        lateral_value = channel_lateral->stick_mixing((int16_t)lateral_value);
+    }
+    g2.motors.set_lateral(lateral_value);
 }
 
 Mode *Rover::mode_from_mode_num(const enum Mode::Number num)

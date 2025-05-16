@@ -34,6 +34,9 @@ public:
 
     // get navigation outputs for speed (in m/s) and turn rate (in rad/sec)
     float get_speed() const { return _desired_speed_limited; }
+    float get_omni_speedX() const { return _omni_speed_x; }
+    float get_omni_speedY() const { return _omni_speed_y; }
+
     float get_turn_rate_rads() const { return _desired_turn_rate_rads; }
 
     // get desired lateral acceleration (for reporting purposes only because will be zero during pivot turns)
@@ -123,6 +126,8 @@ protected:
     // calculate steering and speed to drive along line from origin to destination waypoint
     void update_steering_and_speed(const Location &current_loc, float dt);
 
+    void update_omni_speed(const Location &current_loc, float dt);
+
     // calculate the crosstrack error (does not rely on L1 controller)
     float calc_crosstrack_error(const Location& current_loc) const;
 
@@ -183,6 +188,10 @@ protected:
 
     // main outputs from navigation library
     float _desired_speed_limited;   // desired speed (above) but accel/decel limited
+    float _omni_speed_x;  // X方向速度(m/s)
+    float _omni_speed_y;  // Y方向速度(m/s)
+    Vector2f _desired_speed_xy;  // 当前XY方向期望速度
+
     float _desired_turn_rate_rads;  // desired turn-rate in rad/sec (negative is counter clockwise, positive is clockwise)
     float _desired_lat_accel;       // desired lateral acceleration (for reporting only)
     float _desired_heading_cd;      // desired heading (back towards line between origin and destination)

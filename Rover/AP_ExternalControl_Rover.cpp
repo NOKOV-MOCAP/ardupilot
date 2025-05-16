@@ -23,6 +23,7 @@ bool AP_ExternalControl_Rover::set_linear_velocity_and_yaw_rate(const Vector3f &
     Vector3f linear_velocity_body = ahrs.earth_to_body(linear_velocity);
 
     const float target_speed = linear_velocity_body.x;
+    gcs().send_text(MAV_SEVERITY_WARNING, "linear_velocity_body.x: %f",linear_velocity_body.x);
     const float turn_rate_cds = isnan(yaw_rate_rads)? 0: degrees(yaw_rate_rads)*100;
 
     rover.mode_guided.set_desired_turn_rate_and_speed(turn_rate_cds, target_speed);

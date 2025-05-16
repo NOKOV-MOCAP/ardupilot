@@ -111,6 +111,7 @@ public:
     // set desired location (used in Guided, Auto)
     // set next_destination (if known).  If not provided vehicle stops at destination
     virtual bool set_desired_location(const Location &destination, Location next_destination = Location()) WARN_IF_UNUSED;
+    virtual bool set_desired_location_heading(float yaw_angle_cd,const Location &destination, Location next_destination = Location()) WARN_IF_UNUSED;
 
     // true if vehicle has reached desired location. defaults to true because this is normally used by missions and we do not want the mission to become stuck
     virtual bool reached_destination() const { return true; }
@@ -162,7 +163,7 @@ protected:
     void get_pilot_desired_walking_height(float &walking_height_out) const;
 
     // high level call to navigate to waypoint
-    void navigate_to_waypoint();
+    void navigate_to_waypoint(float desired_yaw_cd);
 
     // calculate steering output given a turn rate
     // desired turn rate in radians/sec. Positive to the right.
@@ -178,6 +179,8 @@ protected:
     // calculates the amount of throttle that should be output based
     // on things like proximity to corners and current speed
     virtual void calc_throttle(float target_speed, bool avoidance_enabled);
+    virtual void calc_lateral(float target_speed, bool avoidance_enabled);
+    
 
     // performs a controlled stop. returns true once vehicle has stopped
     bool stop_vehicle();
@@ -198,6 +201,7 @@ protected:
     // throttle_out is in the range -100 ~ +100
     void get_pilot_input(float &steering_out, float &throttle_out) const;
     void set_steering(float steering_value);
+    void set_lateral(float lateral_value);
 
     // references to avoid code churn:
     class AP_AHRS &ahrs;
@@ -250,6 +254,7 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
     void calc_throttle(float target_speed, bool avoidance_enabled) override;
+    void calc_lateral(float target_speed, bool avoidance_enabled) override;
 
     // attributes of the mode
     bool is_autopilot_mode() const override { return true; }
@@ -269,6 +274,7 @@ public:
     // get or set desired location
     bool get_desired_location(Location& destination) const override WARN_IF_UNUSED;
     bool set_desired_location(const Location &destination, Location next_destination = Location()) override WARN_IF_UNUSED;
+    bool set_desired_location_heading(float yaw_angle_cd,const Location &destination, Location next_destination = Location()) override WARN_IF_UNUSED;
     bool reached_destination() const override;
 
     // set desired speed in m/s
@@ -361,6 +367,9 @@ private:
 
     // HeadingAndSpeed sub mode variables
     float _desired_speed;   // desired speed in HeadingAndSpeed submode
+    float _desired_speed_x;
+    float _desired_speed_y;
+
     bool _reached_heading;  // true when vehicle has reached desired heading in TurnToHeading sub mode
 
     // Loiter control
@@ -543,6 +552,7 @@ public:
     // get or set desired location
     bool get_desired_location(Location& destination) const override WARN_IF_UNUSED;
     bool set_desired_location(const Location &destination, Location next_destination = Location()) override WARN_IF_UNUSED;
+    bool set_desired_location_heading(float yaw_angle_cd,const Location &destination, Location next_destination = Location()) override WARN_IF_UNUSED;
 
     // set desired heading and speed
     void set_desired_heading_and_speed(float yaw_angle_cd, float target_speed);
@@ -550,6 +560,7 @@ public:
     // set desired heading-delta, turn-rate and speed
     void set_desired_heading_delta_and_speed(float yaw_delta_cd, float target_speed);
     void set_desired_turn_rate_and_speed(float turn_rate_cds, float target_speed);
+    void set_desired_yawrate_and_speed(float turn_rate_cds, float target_speed_x, float target_speed_y);
 
     // set steering and throttle (-1 to +1).  Only called from scripts
     void set_steering_and_throttle(float steering, float throttle);
@@ -596,6 +607,8 @@ protected:
     float _desired_yaw_rate_cds;// target turn rate centi-degrees per second
     bool send_notification;     // used to send one time notification to ground station
     float _desired_speed;       // desired speed used only in HeadingAndSpeed submode
+    float _desired_speed_x;
+    float _desired_speed_y;
 
     // direct steering and throttle control
     bool _have_strthr;          // true if we have a valid direct steering and throttle inputs
@@ -661,6 +674,8 @@ protected:
 
     Location _destination;      // target location to hold position around
     float _desired_speed;       // desired speed (ramped down from initial speed to zero)
+    float _desired_speed_x;
+    float _desired_speed_y;
 };
 
 class ModeManual : public Mode
@@ -847,6 +862,8 @@ protected:
     void _exit() override;
 
     float _desired_speed;       // desired speed in m/s
+    float _desired_speed_x;
+    float _desired_speed_y;
 };
 #endif
 

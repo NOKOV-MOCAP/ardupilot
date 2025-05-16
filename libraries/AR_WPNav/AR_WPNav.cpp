@@ -164,18 +164,22 @@ void AR_WPNav::update(float dt)
 
     // advance target along path unless vehicle is pivoting
     if (!_pivot.active()) {
+        
         switch (_nav_control_type) {
         case NavControllerType::NAV_SCURVE:
+            // gcs().send_text(MAV_SEVERITY_WARNING, "NAV_SCURVE");
             advance_wp_target_along_track(current_loc, dt);
             break;
         case NavControllerType::NAV_PSC_INPUT_SHAPING:
+            // gcs().send_text(MAV_SEVERITY_WARNING, "NAV_PSC_INPUT_SHAPING");
             update_psc_input_shaping(dt);
             break;
         }
     }
-
+    // 更新全向速度
+    update_omni_speed(current_loc, dt);
     // update_steering_and_speed
-    update_steering_and_speed(current_loc, dt);
+    // update_steering_and_speed(current_loc, dt);
 }
 
 // set maximum speed in m/s.  returns true on success
@@ -348,6 +352,7 @@ bool AR_WPNav::set_desired_location_expect_fast_update(const Location &destinati
         }
     }
 
+    // gcs().send_text(MAV_SEVERITY_WARNING, "initialise some variables");
     // initialise some variables
     _origin = _destination;
     _destination = destination;
@@ -498,7 +503,9 @@ void AR_WPNav::update_distance_and_bearing_to_destination()
         return;
     }
     _distance_to_destination = current_loc.get_distance(_destination);
+    
     _wp_bearing_cd = current_loc.get_bearing_to(_destination);
+    // gcs().send_text(MAV_SEVERITY_WARNING, "_distance_to_destination: %f  _wp_bearing_cd: %f",_distance_to_destination,_wp_bearing_cd);
 }
 
 // calculate steering and speed to drive along line from origin to destination waypoint
@@ -522,6 +529,70 @@ void AR_WPNav::update_steering_and_speed(const Location &current_loc, float dt)
         _desired_turn_rate_rads = _pos_control.get_desired_turn_rate_rads();
         _desired_lat_accel = _pos_control.get_desired_lat_accel();
     }
+}
+
+void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
+{
+    float _current_yaw =  AP::ahrs().get_yaw();
+
+    Vector2f current_pos, target_pos;
+    if (!current_loc.get_vector_xy_from_origin_NE(current_pos) || 
+        !_destination.get_vector_xy_from_origin_NE(target_pos)) {
+        _omni_speed_x = 0;
+        _omni_speed_y = 0;
+        return;
+    }
+    current_pos *= 0.01f; 
+    target_pos *= 0.01f;  
+
+    Vector2f pos_error = target_pos - current_pos;
+    float pos_error_length = pos_error.length();
+
+    if (pos_error_length < 0.07f) { 
+        _omni_speed_x = 0;
+        _omni_speed_y = 0;
+        _desired_speed_limited = 0;
+        return;
+    }
+    /*
+     * 
+     * [ cosψ  sinψ ]   [ned_x]
+     * [-sinψ  cosψ ] * [ned_y]
+     */
+    // float cos_yaw = cosf(_current_yaw);
+    // float sin_yaw = sinf(_current_yaw);
+    // Vector2f body_error;
+    // body_error.x = pos_error.x * cos_yaw + pos_error.y * sin_yaw;
+    // body_error.y = -pos_error.x * sin_yaw + pos_error.y * cos_yaw;
+
+    // Vector2f body_vel = body_error * _pos_control.get_pos_p().kP();
+    
+    // _omni_speed_x = constrain_float(body_vel.x, -_speed_max, _speed_max);
+    // _omni_speed_y = constrain_float(body_vel.y, -_speed_max, _speed_max);
+
+    float cos_yaw = cosf(_current_yaw);
+    float sin_yaw = sinf(_current_yaw);
+    Vector2f body_error;
+    body_error.x = pos_error.x * cos_yaw + pos_error.y * sin_yaw;
+    body_error.y = -pos_error.x * sin_yaw + pos_error.y * cos_yaw;
+
+    Vector2f body_vel = body_error * _pos_control.get_pos_p().kP();
+
+    // 计算速度向量的模长
+    float speed_magnitude = sqrtf(body_vel.x * body_vel.x + body_vel.y * body_vel.y);
+
+    // 如果速度超过最大值，则按比例缩放
+    if (speed_magnitude > _speed_max) {
+        float scale = _speed_max / speed_magnitude;
+        _omni_speed_x = body_vel.x * scale;
+        _omni_speed_y = body_vel.y * scale;
+    } else {
+        _omni_speed_x = body_vel.x;
+        _omni_speed_y = body_vel.y;
+    }
+
+    // gcs().send_text(MAV_SEVERITY_WARNING, "_omni_speed_x: %f  _omni_speed_y: %f",_omni_speed_x,_omni_speed_y);
+    _desired_speed_limited = body_vel.length();
 }
 
 // settor to allow vehicle code to provide turn related param values to this library (should be updated regularly)

@@ -71,6 +71,7 @@ public:
         k_param_proximity_max_rate,
         k_param_nmea,
         k_param_kdecan,
+        k_param_c610can,
         k_param_pole_count0,
         k_param_esc_serial_port0,
         k_param_esc_number1,

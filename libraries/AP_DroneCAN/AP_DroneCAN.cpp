@@ -319,6 +319,7 @@ bool AP_DroneCAN::add_interface(AP_HAL::CANIface* can_iface)
 
 void AP_DroneCAN::init(uint8_t driver_index, bool enable_filters)
 {
+   
     if (driver_index != _driver_index) {
         debug_dronecan(AP_CANManager::LOG_ERROR, "DroneCAN: init called with wrong driver_index");
         return;
@@ -826,6 +827,115 @@ void AP_DroneCAN::SRV_send_himark(void)
     himark_out.broadcast(msg);
 }
 #endif // AP_DRONECAN_HIMARK_SERVO_SUPPORT
+
+// void AP_DroneCAN::handle_c610_feedback(const AP_HAL::CANFrame& frame)
+// {
+//     // 检查是否为C610反馈帧 (ID 0x201-0x208)
+//     const uint8_t esc_id = frame.id - 0x201;
+//     if (esc_id >= DRONECAN_SRV_NUMBER || frame.dlc != 8) {
+//         return;
+//     }
+
+//     // 解析反馈数据
+//     _c610_feedback[esc_id].rotor_angle = (frame.data[0] << 8) | frame.data[1];
+//     _c610_feedback[esc_id].rotor_speed = (int16_t)((frame.data[2] << 8) | frame.data[3]);
+//     _c610_feedback[esc_id].actual_torque = (int16_t)((frame.data[4] << 8) | frame.data[5]);
+//     _c610_feedback[esc_id].last_update_ms = AP_HAL::millis();
+
+//     // 转换为DroneCAN ESC状态消息
+//     uavcan_equipment_esc_Status dronecan_msg;
+//     dronecan_msg.esc_index = esc_id;
+    
+//     // 角度转换为0-8191范围
+//     dronecan_msg.position = _c610_feedback[esc_id].rotor_angle;
+    
+//     // RPM转换为rad/s (如果需要)
+//     dronecan_msg.rpm = _c610_feedback[esc_id].rotor_speed;
+    
+//     // 扭矩转换为百分比
+//     dronecan_msg.power_rating_pct = (_c610_feedback[esc_id].actual_torque / 40.0f) * 100;
+    
+//     // 调用原有的状态处理
+//     handle_ESC_status(dronecan_msg);
+// }
+
+// void AP_DroneCAN::handle_can_frame(const AP_HAL::CANFrame& frame)
+// {
+//     // 处理C610电调反馈(0x201-0x208)
+//     if (frame.id >= 0x201 && frame.id <= 0x208) {
+//         handle_c610_feedback(frame);
+//         return;
+//     }
+    
+//     // 其他CAN帧交给原有逻辑处理
+//     CanardInterface::handle_can_frame(frame);
+// }
+
+// void AP_DroneCAN::SRV_send_esc(void)
+// {
+//     uint8_t active_esc_num = 0;
+//     const bool armed = hal.util->get_soft_armed();
+
+//     // 准备C610电调命令数据 (两个CAN ID各控制4个电调)
+//     uint8_t c610_data_0x200[8] = {0}; // 用于ID 0x200 (电调0-3)
+//     uint8_t c610_data_0x1FF[8] = {0}; // 用于ID 0x1FF (电调4-7)
+
+//     // 检查哪些电调需要更新
+//     for (uint8_t i = 0; i < DRONECAN_SRV_NUMBER; i++) {
+//         if ((((uint32_t) 1) << i) & _ESC_armed_mask) {
+//             if (_SRV_conf[i].esc_pending) {
+//                 active_esc_num++;
+//             }
+//         }
+//     }
+
+//     // 如果有电调需要更新
+//     if (active_esc_num > 0) {
+//         // 填充C610格式命令数据
+//         for (uint8_t i = 0; i < DRONECAN_SRV_NUMBER; i++) {
+//             if (armed && ((((uint32_t) 1U) << i) & _ESC_armed_mask) {
+//                 // 将PWM值(1000-2000)转换为扭矩命令(-32768~32767对应-40~40Nm)
+//                 int16_t torque_cmd = (_SRV_conf[i].pulse - 1500) * 65.536f; // 缩放计算
+//                 torque_cmd = constrain_int16(torque_cmd, -32768, 32767);
+
+//                 // 根据电调ID分配到不同的CAN ID
+//                 if (i < 4) {
+//                     // 电调0-3使用0x200
+//                     c610_data_0x200[i*2] = torque_cmd >> 8;
+//                     c610_data_0x200[i*2+1] = torque_cmd & 0xFF;
+//                 } else if (i < 8) {
+//                     // 电调4-7使用0x1FF
+//                     c610_data_0x1FF[(i-4)*2] = torque_cmd >> 8;
+//                     c610_data_0x1FF[(i-4)*2+1] = torque_cmd & 0xFF;
+//                 }
+//             }
+//         }
+
+//         // 发送0x200命令 (电调0-3)
+//         AP_HAL::CANFrame frame_0x200(0x200, c610_data_0x200, sizeof(c610_data_0x200));
+//         if (canard_iface.send_frame(frame_0x200, AP_HAL::micros64() + 10000)) {
+//             _esc_send_count++;
+//         } else {
+//             _fail_send_count++;
+//         }
+
+//         // 发送0x1FF命令 (电调4-7)
+//         AP_HAL::CANFrame frame_0x1FF(0x1FF, c610_data_0x1FF, sizeof(c610_data_0x1FF));
+//         if (canard_iface.send_frame(frame_0x1FF, AP_HAL::micros64() + 10000)) {
+//             _esc_send_count++;
+//         } else {
+//             _fail_send_count++;
+//         }
+
+//         // 立即推送数据到CAN总线
+//         canard_iface.processTx(true);
+//     }
+
+//     // 重置待发送标志
+//     for (uint8_t i = 0; i < DRONECAN_SRV_NUMBER; i++) {
+//         _SRV_conf[i].esc_pending = false;
+//     }
+// }
 
 void AP_DroneCAN::SRV_send_esc(void)
 {

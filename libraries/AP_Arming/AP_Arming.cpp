@@ -58,6 +58,7 @@
 #include <AP_Vehicle/AP_Vehicle_Type.h>
 #include <AP_Scheduler/AP_Scheduler.h>
 #include <AP_KDECAN/AP_KDECAN.h>
+#include <AP_C610CAN/AP_C610CAN.h>
 #include <AP_Vehicle/AP_Vehicle.h>
 
 #if HAL_MAX_CAN_PROTOCOL_DRIVERS
@@ -1288,6 +1289,7 @@ bool AP_Arming::can_checks(bool report)
                 case AP_CAN::Protocol::Scripting:
                 case AP_CAN::Protocol::Scripting2:
                 case AP_CAN::Protocol::KDECAN:
+                case AP_CAN::Protocol::C610CAN:
 
                     break;
             }

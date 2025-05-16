@@ -13,6 +13,7 @@ def build(bld):
             'AP_LTM_Telem',
             'AP_Devo_Telem',
             'AP_KDECAN',
+            'AP_C610CAN',
             'AP_AdvancedFailsafe', # TODO for some reason compiling GCS_Common.cpp (in libraries) fails if this isn't included.
             'AC_AttitudeControl',  # for PSCx logging
         ],

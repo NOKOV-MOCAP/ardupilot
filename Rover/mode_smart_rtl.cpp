@@ -73,7 +73,7 @@ void ModeSmartRTL::update()
                 _load_point = false;
             }
             // update navigation controller
-            navigate_to_waypoint();
+            navigate_to_waypoint(_desired_yaw_cd);
 
             // check if we've reached the next point
             if (g2.wp_nav.reached_destination()) {

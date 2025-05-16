@@ -90,7 +90,7 @@ void ModeAuto::update()
 
             // update navigation controller
             if (keep_navigating) {
-                navigate_to_waypoint();
+                navigate_to_waypoint(_desired_yaw_cd);
             }
             break;
         }
@@ -154,6 +154,16 @@ void ModeAuto::calc_throttle(float target_speed, bool avoidance_enabled)
         return;
     }
     Mode::calc_throttle(target_speed, avoidance_enabled);
+}
+
+void ModeAuto::calc_lateral(float target_speed, bool avoidance_enabled)
+{
+    // If not autostarting set the throttle to minimum
+    if (!check_trigger()) {
+        stop_vehicle();
+        return;
+    }
+    Mode::calc_lateral(target_speed, avoidance_enabled);
 }
 
 // return heading (in degrees) to target destination (aka waypoint)
@@ -308,6 +318,18 @@ bool ModeAuto::get_desired_location(Location& destination) const
 
 // set desired location to drive to
 bool ModeAuto::set_desired_location(const Location &destination, Location next_destination)
+{
+    // call parent
+    if (!Mode::set_desired_location(destination, next_destination)) {
+        return false;
+    }
+
+    _submode = SubMode::WP;
+
+    return true;
+}
+
+bool ModeAuto::set_desired_location_heading(float yaw_angle_cd,const Location &destination, Location next_destination)
 {
     // call parent
     if (!Mode::set_desired_location(destination, next_destination)) {
