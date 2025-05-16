@@ -167,7 +167,7 @@ void AR_WPNav::update(float dt)
         
         switch (_nav_control_type) {
         case NavControllerType::NAV_SCURVE:
-            gcs().send_text(MAV_SEVERITY_WARNING, "NAV_SCURVE");
+            // gcs().send_text(MAV_SEVERITY_WARNING, "NAV_SCURVE");
             advance_wp_target_along_track(current_loc, dt);
             break;
         case NavControllerType::NAV_PSC_INPUT_SHAPING:
@@ -179,7 +179,7 @@ void AR_WPNav::update(float dt)
     // 更新全向速度
     update_omni_speed(current_loc, dt);
     // update_steering_and_speed
-    //update_steering_and_speed(current_loc, dt);
+    // update_steering_and_speed(current_loc, dt);
 }
 
 // set maximum speed in m/s.  returns true on success
@@ -559,6 +559,17 @@ void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
      * [ cosψ  sinψ ]   [ned_x]
      * [-sinψ  cosψ ] * [ned_y]
      */
+    // float cos_yaw = cosf(_current_yaw);
+    // float sin_yaw = sinf(_current_yaw);
+    // Vector2f body_error;
+    // body_error.x = pos_error.x * cos_yaw + pos_error.y * sin_yaw;
+    // body_error.y = -pos_error.x * sin_yaw + pos_error.y * cos_yaw;
+
+    // Vector2f body_vel = body_error * _pos_control.get_pos_p().kP();
+    
+    // _omni_speed_x = constrain_float(body_vel.x, -_speed_max, _speed_max);
+    // _omni_speed_y = constrain_float(body_vel.y, -_speed_max, _speed_max);
+
     float cos_yaw = cosf(_current_yaw);
     float sin_yaw = sinf(_current_yaw);
     Vector2f body_error;
@@ -566,11 +577,21 @@ void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
     body_error.y = -pos_error.x * sin_yaw + pos_error.y * cos_yaw;
 
     Vector2f body_vel = body_error * _pos_control.get_pos_p().kP();
-    
-    _omni_speed_x = constrain_float(body_vel.x, -_speed_max, _speed_max);
-    _omni_speed_y = constrain_float(body_vel.y, -_speed_max, _speed_max);
 
-    // gcs().send_text(MAV_SEVERITY_WARNING, "_current_yaw:%f _omni_speed_x: %f  _omni_speed_y: %f",_current_yaw,_omni_speed_x,_omni_speed_y);
+    // 计算速度向量的模长
+    float speed_magnitude = sqrtf(body_vel.x * body_vel.x + body_vel.y * body_vel.y);
+
+    // 如果速度超过最大值，则按比例缩放
+    if (speed_magnitude > _speed_max) {
+        float scale = _speed_max / speed_magnitude;
+        _omni_speed_x = body_vel.x * scale;
+        _omni_speed_y = body_vel.y * scale;
+    } else {
+        _omni_speed_x = body_vel.x;
+        _omni_speed_y = body_vel.y;
+    }
+
+    // gcs().send_text(MAV_SEVERITY_WARNING, "_omni_speed_x: %f  _omni_speed_y: %f",_omni_speed_x,_omni_speed_y);
     _desired_speed_limited = body_vel.length();
 }
 
