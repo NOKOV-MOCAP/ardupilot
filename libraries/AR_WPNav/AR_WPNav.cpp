@@ -546,14 +546,14 @@ void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
     target_pos *= 0.01f;  
 
     Vector2f pos_error = target_pos - current_pos;
-    float pos_error_length = pos_error.length();
+    // float pos_error_length = pos_error.length();
 
-    if (pos_error_length < 0.07f) { 
-        _omni_speed_x = 0;
-        _omni_speed_y = 0;
-        _desired_speed_limited = 0;
-        return;
-    }
+    // if (pos_error_length < 0.07f) { 
+    //     _omni_speed_x = 0;
+    //     _omni_speed_y = 0;
+    //     _desired_speed_limited = 0;
+    //     return;
+    // }
     /*
      * 
      * [ cosψ  sinψ ]   [ned_x]
@@ -576,14 +576,14 @@ void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
     body_error.x = pos_error.x * cos_yaw + pos_error.y * sin_yaw;
     body_error.y = -pos_error.x * sin_yaw + pos_error.y * cos_yaw;
 
-    Vector2f body_vel = body_error * _pos_control.get_pos_p().kP();
-
+    // Vector2f body_vel = body_error * _pos_control.get_pos_p().kP();
+    Vector2f body_vel = body_error;
     // 计算速度向量的模长
     float speed_magnitude = sqrtf(body_vel.x * body_vel.x + body_vel.y * body_vel.y);
 
     // 如果速度超过最大值，则按比例缩放
-    if (speed_magnitude > _speed_max) {
-        float scale = _speed_max / speed_magnitude;
+    if (speed_magnitude > 0.5) {
+        float scale = 0.5 / speed_magnitude;
         _omni_speed_x = body_vel.x * scale;
         _omni_speed_y = body_vel.y * scale;
     } else {
@@ -591,7 +591,7 @@ void AR_WPNav::update_omni_speed(const Location &current_loc, float dt)
         _omni_speed_y = body_vel.y;
     }
 
-    // gcs().send_text(MAV_SEVERITY_WARNING, "_omni_speed_x: %f  _omni_speed_y: %f",_omni_speed_x,_omni_speed_y);
+    // gcs().send_text(MAV_SEVERITY_WARNING, "_omni_speed_x: %f  _omni_speed_y: %f", _omni_speed_x, _omni_speed_y);
     _desired_speed_limited = body_vel.length();
 }
 

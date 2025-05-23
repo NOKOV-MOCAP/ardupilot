@@ -92,8 +92,10 @@ void ModeGuided::update()
                                                                             g2.motors.limit.steer_right,
                                                                             rover.G_Dt);
                 set_steering(steering_out * 4500.0f);
-                calc_throttle(calc_speed_nudge(_desired_speed_x, is_negative(_desired_speed_x)), true);
-                calc_lateral(calc_speed_nudge(_desired_speed_y, is_negative(_desired_speed_y)), true);
+                // calc_throttle(calc_speed_nudge(_desired_speed_x, is_negative(_desired_speed_x)), true);
+                // calc_lateral(calc_speed_nudge(_desired_speed_y, is_negative(_desired_speed_y)), true);
+                calc_throttle(_desired_speed_x, false);
+                calc_lateral(_desired_speed_y, false);
             } else {
                 // we have reached the destination so stay here
                 if (rover.is_boat()) {

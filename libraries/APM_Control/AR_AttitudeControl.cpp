@@ -773,16 +773,21 @@ float AR_AttitudeControl::get_throttle_out_speed(float desired_speed, bool motor
     _speed_last_ms = AP_HAL::millis();
 
     // acceleration limit desired speed
-    _desired_speed = get_desired_speed_accel_limited(desired_speed, dt);
+    // _desired_speed = get_desired_speed_accel_limited(desired_speed, dt);
+    _desired_speed = desired_speed;
 
     // calculate base throttle (protect against divide by zero)
     float throttle_base = 0.0f;
     if (is_positive(cruise_speed) && is_positive(cruise_throttle)) {
         throttle_base = _desired_speed * (cruise_throttle / cruise_speed);
     }
+    
+    if(_desired_speed < 0.04)
+        throttle_base *= 2.0;
 
     // calculate final output
     float throttle_out = _throttle_speed_pid.update_all(_desired_speed, speed, dt, (motor_limit_low || motor_limit_high || _throttle_limit_low || _throttle_limit_high));
+    gcs().send_text(MAV_SEVERITY_WARNING, "throttle speed:%f _desired_speed:%f ",speed,_desired_speed);
     throttle_out += _throttle_speed_pid.get_ff();
     throttle_out += throttle_base;
 
@@ -832,17 +837,22 @@ float AR_AttitudeControl::get_lateral_out_speed(float desired_speed, bool motor_
     _speedY_last_ms = AP_HAL::millis();
 
     // acceleration limit desired speed
-    _desired_speedY = get_desired_speedY_accel_limited(desired_speed, dt);
+    // _desired_speedY = get_desired_speedY_accel_limited(desired_speed, dt);
+    _desired_speedY = desired_speed;
 
     // calculate base throttle (protect against divide by zero)
     float throttle_base = 0.0f;
     if (is_positive(cruise_speed) && is_positive(cruise_throttle)) {
-        throttle_base = _desired_speedY * (cruise_throttle / cruise_speed);
+        throttle_base = _desired_speedY * (0.33 / 0.8);
     }
+
+    if(_desired_speedY < 0.04)
+        throttle_base *= 2.0;
 
     // calculate final output
     float throttle_out = _lateral_speed_pid.update_all(_desired_speedY, speed, dt, (motor_limit_low || motor_limit_high || _lateral_limit_low || _lateral_limit_high));
-    gcs().send_text(MAV_SEVERITY_WARNING, "speed:%f _desired_speedY:%f _lateral_speed_pid:%f throttle_base:%f  lateral_out: %f",speed,_desired_speedY,_lateral_speed_pid.get_ff(),throttle_base,throttle_out);
+    gcs().send_text(MAV_SEVERITY_WARNING, "lateral speed:%f _desired_speedY:%f ",speed,_desired_speedY);
+    // gcs().send_text(MAV_SEVERITY_WARNING, "speed:%f _desired_speedY:%f _lateral_speed_pid:%f throttle_base:%f  lateral_out: %f",speed,_desired_speedY,_lateral_speed_pid.get_ff(),throttle_base,throttle_out);
     throttle_out += _lateral_speed_pid.get_ff();
     throttle_out += throttle_base;
 
@@ -1113,7 +1123,7 @@ bool AR_AttitudeControl::get_right_speed(float &speed) const
     if (_ahrs.get_velocity_NED(velocity)) {
         // 计算横向速度：-Vnorth*sin(yaw) + Veast*cos(yaw)
         speed = -velocity.x * _ahrs.sin_yaw() + velocity.y * _ahrs.cos_yaw();
-        speed *= -1.0;
+        // speed *= -1.0;
         return true;
     }
 

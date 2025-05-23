@@ -303,18 +303,18 @@ void Mode::calc_throttle(float target_speed, bool avoidance_enabled)
     // get acceleration limited target speed
     // target_speed = attitude_control.get_desired_speed_accel_limited(target_speed, rover.G_Dt);
 
-#if AP_AVOIDANCE_ENABLED
-    // apply object avoidance to desired speed using half vehicle's maximum deceleration
-    if (avoidance_enabled) {
-        g2.avoid.adjust_speed(0.0f, 0.5f * attitude_control.get_decel_max(), ahrs.get_yaw(), target_speed, rover.G_Dt);
-        if (g2.sailboat.tack_enabled() && g2.avoid.limits_active()) {
-            // we are a sailboat trying to avoid fence, try a tack
-            if (rover.control_mode != &rover.mode_acro) {
-                rover.control_mode->handle_tack_request();
-            }
-        }
-    }
-#endif  // AP_AVOIDANCE_ENABLED
+// #if AP_AVOIDANCE_ENABLED
+//     // apply object avoidance to desired speed using half vehicle's maximum deceleration
+//     if (avoidance_enabled) {
+//         g2.avoid.adjust_speed(0.0f, 0.5f * attitude_control.get_decel_max(), ahrs.get_yaw(), target_speed, rover.G_Dt);
+//         if (g2.sailboat.tack_enabled() && g2.avoid.limits_active()) {
+//             // we are a sailboat trying to avoid fence, try a tack
+//             if (rover.control_mode != &rover.mode_acro) {
+//                 rover.control_mode->handle_tack_request();
+//             }
+//         }
+//     }
+// #endif  // AP_AVOIDANCE_ENABLED
 
     // call throttle controller and convert output to -100 to +100 range
     float throttle_out = 0.0f;
@@ -361,21 +361,24 @@ void Mode::calc_lateral(float target_speed, bool avoidance_enabled)
 //         }
 //     }
 // #endif  // AP_AVOIDANCE_ENABLED
-
+    // gcs().send_text(MAV_SEVERITY_WARNING, "target_speed1:%f",target_speed);
     // call throttle controller and convert output to -100 to +100 range
     float throttle_out = 0.0f;
 
     if (g2.sailboat.sail_enabled()) {
         // sailboats use special throttle and mainsail controller
         g2.sailboat.get_throttle_and_set_mainsail(target_speed, throttle_out);
+        
     } else {
         // call speed or stop controller
         if (is_zero(target_speed) && !rover.is_balancebot()) {
             bool stopped;
             throttle_out = 100.0f * attitude_control.get_lateral_out_stop(g2.motors.limit.throttle_lower, g2.motors.limit.throttle_upper, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt, stopped);
+            
         } else {
             bool motor_lim_low = g2.motors.limit.throttle_lower || attitude_control.pitch_limited();
             bool motor_lim_high = g2.motors.limit.throttle_upper || attitude_control.pitch_limited();
+            // gcs().send_text(MAV_SEVERITY_WARNING, "target_speed4:%f",target_speed);
             throttle_out = 100.0f * attitude_control.get_lateral_out_speed(target_speed, motor_lim_low, motor_lim_high, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt);
         }
 
@@ -504,7 +507,8 @@ void Mode::navigate_to_waypoint(float desired_yaw_cd)
     // do not do simple avoidance because this is already handled in the position controller
     
     calc_throttle(g2.wp_nav.get_omni_speedX(), false);
-    calc_lateral(-1.0 * g2.wp_nav.get_omni_speedY(), false);
+    // gcs().send_text(MAV_SEVERITY_WARNING, "get_omni_speedY():%f",g2.wp_nav.get_omni_speedY());
+    calc_lateral(g2.wp_nav.get_omni_speedY(), false);
     // calc_throttle(g2.wp_nav.get_speed(), false);
 
     float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
