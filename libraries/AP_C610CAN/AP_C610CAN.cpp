@@ -31,7 +31,7 @@
 extern const AP_HAL::HAL& hal;
 
 #define AP_C610CAN_DEBUG 0
-
+int16_t pwm_to_current(uint16_t pwm);
 // table of user settable CAN bus parameters
 const AP_Param::GroupInfo AP_C610CAN::var_info[] = {
 

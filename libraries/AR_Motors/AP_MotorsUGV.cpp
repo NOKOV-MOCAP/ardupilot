@@ -301,7 +301,7 @@ float AP_MotorsUGV::get_slew_limited_throttle(float throttle, float dt) const
  */
 bool AP_MotorsUGV::have_skid_steering() const
 {
-    return (SRV_Channels::function_assigned(SRV_Channel::k_throttleLeft) && SRV_Channels::function_assigned(SRV_Channel::k_throttleRight)) || is_omni();
+    return (SRV_Channels::function_assigned(SRV_Channel::k_throttleLeft) && SRV_Channels::function_assigned(SRV_Channel::k_throttleRight))|| is_omni();
 }
 
 // true if the vehicle has a mainsail
@@ -332,7 +332,7 @@ void AP_MotorsUGV::output(bool armed, float ground_speed, float dt)
     output_regular(armed, ground_speed, _steering, _throttle);
 
     // output for skid steering style frames
-    // output_skid_steering(armed, _steering, _throttle, dt);
+    output_skid_steering(armed, _steering, _throttle, dt);
 
     // output for omni frames
     output_omni(armed, _steering, _throttle, _lateral);
@@ -794,7 +794,7 @@ void AP_MotorsUGV::output_regular(bool armed, float ground_speed, float steering
 // output to skid steering channels
 void AP_MotorsUGV::output_skid_steering(bool armed, float steering, float throttle, float dt)
 {
-    if (!have_skid_steering()) {
+    if (have_skid_steering()) {
         return;
     }
 

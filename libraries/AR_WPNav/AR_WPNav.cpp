@@ -19,6 +19,7 @@
 #include "AR_WPNav.h"
 #include <GCS_MAVLink/GCS.h>
 #include <AP_InternalError/AP_InternalError.h>
+#include <AR_Motors/AP_MotorsUGV.h>
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
 #include <stdio.h>
@@ -176,10 +177,13 @@ void AR_WPNav::update(float dt)
             break;
         }
     }
+
     // 更新全向速度
-    update_omni_speed(current_loc, dt);
+    if(AP_MotorsUGV::get_singleton()->is_omni())
+        update_omni_speed(current_loc, dt);
     // update_steering_and_speed
-    // update_steering_and_speed(current_loc, dt);
+    else
+        update_steering_and_speed(current_loc, dt);
 }
 
 // set maximum speed in m/s.  returns true on success
