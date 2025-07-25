@@ -30,7 +30,17 @@ void ModeGuided::update()
             if (!g2.wp_nav.reached_destination()) {
                 // update navigation controller
                 navigate_to_waypoint(_desired_yaw_cd);
-            } else {
+            } 
+            else if (have_attitude_target && (millis() - _des_att_time_ms) > 3000) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "target not received last 3secs, stopping");
+                have_attitude_target = false;
+            }
+            else if (have_attitude_target) {
+                // run steering and throttle controllers
+                calc_steering_to_heading(_desired_yaw_cd);
+                calc_throttle(0.0, true);
+            }
+            else {
                 // send notification
                 if (send_notification) {
                     send_notification = false;
@@ -92,8 +102,15 @@ void ModeGuided::update()
                                                                             g2.motors.limit.steer_right,
                                                                             rover.G_Dt);
                 set_steering(steering_out * 4500.0f);
-                calc_throttle(calc_speed_nudge(_desired_speed_x, is_negative(_desired_speed_x)), true);
-                calc_lateral(calc_speed_nudge(_desired_speed_y, is_negative(_desired_speed_y)), true);
+                // calc_throttle(calc_speed_nudge(_desired_speed_x, is_negative(_desired_speed_x)), true);
+                // calc_lateral(calc_speed_nudge(_desired_speed_y, is_negative(_desired_speed_y)), true);
+                if(AP_MotorsUGV::get_singleton()->is_omni()){
+                    calc_throttle(_desired_speed_x, false);
+                    calc_lateral(_desired_speed_y, false);
+                }
+                else{
+                    calc_throttle(_desired_speed, false);
+                }
             } else {
                 // we have reached the destination so stay here
                 if (rover.is_boat()) {
@@ -356,6 +373,13 @@ bool ModeGuided::set_desired_location_heading(float yaw_angle_cd, const Location
     _guided_mode = SubMode::WP;
     _desired_yaw_cd = yaw_angle_cd;
     send_notification = true;
+
+    if(AP_MotorsUGV::get_singleton()->have_skid_steering()){
+        _des_att_time_ms = AP_HAL::millis();
+        have_attitude_target = true;
+    }
+    
+
 #if HAL_LOGGING_ENABLED
     rover.Log_Write_GuidedTarget((uint8_t)_guided_mode, Vector3f(destination.lat, destination.lng, 0), Vector3f(g2.wp_nav.get_speed_max(), 0.0f, 0.0f));
 #endif

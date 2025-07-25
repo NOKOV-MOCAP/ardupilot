@@ -303,18 +303,18 @@ void Mode::calc_throttle(float target_speed, bool avoidance_enabled)
     // get acceleration limited target speed
     // target_speed = attitude_control.get_desired_speed_accel_limited(target_speed, rover.G_Dt);
 
-#if AP_AVOIDANCE_ENABLED
-    // apply object avoidance to desired speed using half vehicle's maximum deceleration
-    if (avoidance_enabled) {
-        g2.avoid.adjust_speed(0.0f, 0.5f * attitude_control.get_decel_max(), ahrs.get_yaw(), target_speed, rover.G_Dt);
-        if (g2.sailboat.tack_enabled() && g2.avoid.limits_active()) {
-            // we are a sailboat trying to avoid fence, try a tack
-            if (rover.control_mode != &rover.mode_acro) {
-                rover.control_mode->handle_tack_request();
-            }
-        }
-    }
-#endif  // AP_AVOIDANCE_ENABLED
+// #if AP_AVOIDANCE_ENABLED
+//     // apply object avoidance to desired speed using half vehicle's maximum deceleration
+//     if (avoidance_enabled) {
+//         g2.avoid.adjust_speed(0.0f, 0.5f * attitude_control.get_decel_max(), ahrs.get_yaw(), target_speed, rover.G_Dt);
+//         if (g2.sailboat.tack_enabled() && g2.avoid.limits_active()) {
+//             // we are a sailboat trying to avoid fence, try a tack
+//             if (rover.control_mode != &rover.mode_acro) {
+//                 rover.control_mode->handle_tack_request();
+//             }
+//         }
+//     }
+// #endif  // AP_AVOIDANCE_ENABLED
 
     // call throttle controller and convert output to -100 to +100 range
     float throttle_out = 0.0f;
@@ -361,21 +361,24 @@ void Mode::calc_lateral(float target_speed, bool avoidance_enabled)
 //         }
 //     }
 // #endif  // AP_AVOIDANCE_ENABLED
-
+    // gcs().send_text(MAV_SEVERITY_WARNING, "target_speed1:%f",target_speed);
     // call throttle controller and convert output to -100 to +100 range
     float throttle_out = 0.0f;
 
     if (g2.sailboat.sail_enabled()) {
         // sailboats use special throttle and mainsail controller
         g2.sailboat.get_throttle_and_set_mainsail(target_speed, throttle_out);
+        
     } else {
         // call speed or stop controller
         if (is_zero(target_speed) && !rover.is_balancebot()) {
             bool stopped;
             throttle_out = 100.0f * attitude_control.get_lateral_out_stop(g2.motors.limit.throttle_lower, g2.motors.limit.throttle_upper, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt, stopped);
+            
         } else {
             bool motor_lim_low = g2.motors.limit.throttle_lower || attitude_control.pitch_limited();
             bool motor_lim_high = g2.motors.limit.throttle_upper || attitude_control.pitch_limited();
+            // gcs().send_text(MAV_SEVERITY_WARNING, "target_speed4:%f",target_speed);
             throttle_out = 100.0f * attitude_control.get_lateral_out_speed(target_speed, motor_lim_low, motor_lim_high, g.speed_cruise, g.throttle_cruise * 0.01f, rover.G_Dt);
         }
 
@@ -502,10 +505,13 @@ void Mode::navigate_to_waypoint(float desired_yaw_cd)
 
     // pass desired speed to throttle controller
     // do not do simple avoidance because this is already handled in the position controller
-    
-    calc_throttle(g2.wp_nav.get_omni_speedX(), false);
-    calc_lateral(-1.0 * g2.wp_nav.get_omni_speedY(), false);
-    // calc_throttle(g2.wp_nav.get_speed(), false);
+    if(AP_MotorsUGV::get_singleton()->is_omni()){
+        calc_throttle(g2.wp_nav.get_omni_speedX(), false);
+        calc_lateral(g2.wp_nav.get_omni_speedY(), false);
+    }
+    else{
+        calc_throttle(g2.wp_nav.get_speed(), false);
+    }
 
     float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
     // gcs().send_text(MAV_SEVERITY_WARNING, "desired_heading_cd: %f desired_yaw_cd:%f",desired_heading_cd,desired_yaw_cd);
@@ -518,19 +524,74 @@ void Mode::navigate_to_waypoint(float desired_yaw_cd)
         calc_steering_to_heading(desired_heading_cd, turn_rate);
     } else {
         // retrieve turn rate from waypoint controller
-        // float desired_turn_rate_rads = g2.wp_nav.get_turn_rate_rads();
+        float desired_turn_rate_rads = g2.wp_nav.get_turn_rate_rads();
 
         // if simple avoidance is active at very low speed do not attempt to turn
 #if AP_AVOIDANCE_ENABLED
         if (g2.avoid.limits_active() && (fabsf(attitude_control.get_desired_speed()) <= attitude_control.get_stop_speed())) {
-            // desired_turn_rate_rads = 0.0f;
+            desired_turn_rate_rads = 0.0f;
+        }
+#endif
+        
+        if(AP_MotorsUGV::get_singleton()->is_omni()){
+            calc_steering_to_heading(desired_yaw_cd);
+        }
+        else{
+            // call turn rate steering controller
+            calc_steering_from_turn_rate(desired_turn_rate_rads);
+        }
+        
+    }
+}
+
+void Mode::navigate_to_waypoint()
+{
+    // apply speed nudge from pilot
+    // calc_speed_nudge's "desired_speed" argument should be negative when vehicle is reversing
+    // AR_WPNav nudge_speed_max argu,ent should always be positive even when reversing
+    const float calc_nudge_input_speed = g2.wp_nav.get_speed_max() * (g2.wp_nav.get_reversed() ? -1.0 : 1.0);
+    const float nudge_speed_max = calc_speed_nudge(calc_nudge_input_speed, g2.wp_nav.get_reversed());
+    g2.wp_nav.set_nudge_speed_max(fabsf(nudge_speed_max));
+
+    // update navigation controller
+    g2.wp_nav.update(rover.G_Dt);
+    _distance_to_destination = g2.wp_nav.get_distance_to_destination();
+
+#if AP_AVOIDANCE_ENABLED
+    // sailboats trigger tack if simple avoidance becomes active
+    if (g2.sailboat.tack_enabled() && g2.avoid.limits_active()) {
+        // we are a sailboat trying to avoid fence, try a tack
+        gcs().send_text(MAV_SEVERITY_WARNING, "AP_AVOIDANCE_ENABLED");
+        rover.control_mode->handle_tack_request();
+    }
+#endif
+
+    // pass desired speed to throttle controller
+    // do not do simple avoidance because this is already handled in the position controller
+    calc_throttle(g2.wp_nav.get_speed(), false);
+
+    float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
+    // gcs().send_text(MAV_SEVERITY_WARNING, "desired_heading_cd: %f desired_yaw_cd:%f",desired_heading_cd,desired_yaw_cd);
+    if (g2.sailboat.use_indirect_route(desired_heading_cd)) {
+        // sailboats use heading controller when tacking upwind
+        gcs().send_text(MAV_SEVERITY_WARNING, "sailboats use heading controller when tacking upwind");
+        desired_heading_cd = g2.sailboat.calc_heading(desired_heading_cd);
+        // use pivot turn rate for tacks
+        const float turn_rate = g2.sailboat.tacking() ? g2.wp_nav.get_pivot_rate() : 0.0f;
+        calc_steering_to_heading(desired_heading_cd, turn_rate);
+    } else {
+        // retrieve turn rate from waypoint controller
+        float desired_turn_rate_rads = g2.wp_nav.get_turn_rate_rads();
+
+        // if simple avoidance is active at very low speed do not attempt to turn
+#if AP_AVOIDANCE_ENABLED
+        if (g2.avoid.limits_active() && (fabsf(attitude_control.get_desired_speed()) <= attitude_control.get_stop_speed())) {
+            desired_turn_rate_rads = 0.0f;
         }
 #endif
 
         // call turn rate steering controller
-        // calc_steering_from_turn_rate(desired_turn_rate_rads);
-        calc_steering_to_heading(desired_yaw_cd);
-        
+        calc_steering_from_turn_rate(desired_turn_rate_rads);
     }
 }
 

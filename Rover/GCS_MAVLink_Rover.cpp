@@ -804,8 +804,13 @@ void GCS_MAVLINK_Rover::handle_set_position_target_local_ned(const mavlink_messa
     } else if (!vel_ignore && acc_ignore && yaw_ignore && !yaw_rate_ignore) {
         // consume velocity and turn rate
         // gcs().send_text(MAV_SEVERITY_WARNING, "consume velocity and turn rate");
-        // rover.mode_guided.set_desired_turn_rate_and_speed(target_turn_rate_cds, speed_dir * target_speed);
-        rover.mode_guided.set_desired_yawrate_and_speed(target_turn_rate_cds, packet.vx, packet.vy);
+        if(AP_MotorsUGV::get_singleton()->is_omni()){
+            rover.mode_guided.set_desired_yawrate_and_speed(target_turn_rate_cds, packet.vx, packet.vy);
+        }
+        else{
+            rover.mode_guided.set_desired_turn_rate_and_speed(target_turn_rate_cds, speed_dir * target_speed);
+        }
+        
     } else if (!vel_ignore && acc_ignore && !yaw_ignore && yaw_rate_ignore) {
         // consume velocity and heading
         gcs().send_text(MAV_SEVERITY_WARNING, "consume velocity and heading");

@@ -164,6 +164,7 @@ protected:
 
     // high level call to navigate to waypoint
     void navigate_to_waypoint(float desired_yaw_cd);
+    void navigate_to_waypoint();
 
     // calculate steering output given a turn rate
     // desired turn rate in radians/sec. Positive to the right.
